@@ -19,13 +19,14 @@ outputStatus() {
 checkStatus() {
   echo -e '******************************************'
   outputStatus $rabbitStatus ' RabbitMQ'
-# TODO (ramsey) secs behind master section in if block broken, needs further testing
   outputStatus $myRepl ' MySQL Replication'
-# TODO (ramsey) test this:
   outputStatus $tenantUser ' User and Tenant Created'
-# TODO (ramsey) add image checks:
-#  outputStatus $glanceImages 'Glance Images Uploaded'
+  outputStatus $glanceImages ' Glance Images Uploaded'
   outputStatus $instanceSuccess ' Instance Availability'
+  outputStatus $snapshot ' Snapshot Creation'
+  outputStatus $floatingIP ' Floating IPs'
+  outputStatus $nimCheck ' Nimbus Installed'
+  outputStatus $cinderVolume ' Cinder Volumes'
   echo -e '******************************************'
 }
 
@@ -98,23 +99,24 @@ done
 
 if mysql mysql -e 'SELECT User FROM user\G' | grep -q repl; then
   echo 'MySQL replication configured.'
-  SLAVE=$(mysql -e "SHOW SLAVE STATUS\G" | awk '/Master_Host/ {print $2}')
+  slave=$(mysql -e "SHOW SLAVE STATUS\G" | awk '/Master_Host/ {print $2}')
+  slaveSecsBehind=$(ssh $slave "mysql -e 'SHOW SLAVE STATUS\G' | grep 'Seconds_Behind_Master'")
   if ! mysql -e 'SHOW SLAVE STATUS\G' | grep -q "Slave_IO_Running: Yes"; then
     echo 'MySQL replication possibly broken (Slave IO not running)! Please investigate.'
     exit 0
   elif ! mysql -e 'SHOW SLAVE STATUS\G' | grep -q "Slave_SQL_Running: Yes"; then
     echo 'MySQL replication possibly broken (Slave SQL not running)! Please investigate.'
     exit 0
-  elif [ $(mysql -e 'SHOW SLAVE STATUS\G' | awk '/Seconds_Behind_Master/ {print $2}') -lt 1 ]; then
+  elif [ $(mysql -e 'SHOW SLAVE STATUS\G' | awk '/Seconds_Behind_Master/ {print $2}') -gt 0 ]; then
     echo 'MySQL replication possibly broken! The slave is behind master!'
     exit 0
-  elif ! ssh $SLAVE 'mysql -e "SHOW SLAVE STATUS\G" | grep -q "Slave_SQL_Running: Yes"'; then
+  elif ! ssh $slave 'mysql -e "SHOW SLAVE STATUS\G" | grep -q "Slave_SQL_Running: Yes"'; then
     echo 'MySQL replication possibly broken (Slave SQL not running) on slave! Please investigate.'
     exit 0
-  elif ! ssh $SLAVE 'mysql -e "SHOW SLAVE STATUS\G" | grep -q "Slave_SQL_Running: "Yes"'; then
+  elif ! ssh $slave 'mysql -e "SHOW SLAVE STATUS\G" | grep -q "Slave_SQL_Running: Yes"'; then
     echo 'MySQL replication possibly broken (Slave SQL not running) on slave! Please investigate.'
     exit 0
-  elif [ $(ssh $SLAVE "mysql -e 'SHOW SLAVE STATUS\G' | awk '/Seconds_Behind_Master/ {print $2}'") -lt 1 ]; then
+  elif [ $(echo $slaveSecsBehind | awk '{print $2}') -gt 0 ]; then
     echo 'MySQL replication possibly broken! The slave is behind master on the slave!'
     exit 0
   else
@@ -123,18 +125,75 @@ if mysql mysql -e 'SELECT User FROM user\G' | grep -q repl; then
   fi
 fi
 
+# Verify keystone user and tenant
+
 echo '******************************************'
+echo
 echo 'Keystone users:'
 keystone user-list | egrep -v 'ceilometer|cinder|glance|monitoring|neutron|nova' | awk '/True/ {print $2, $4}'
+echo
 echo '******************************************'
+echo
 echo 'Keystone tenants:'
 keystone tenant-list | egrep -v 'service' | awk '/True/ {print $2, $4}'
+echo
 echo '******************************************'
 
 while [ -z $tenantUser ]; do
   echo 'Is user/tenant created? (y/n)'
   read tenantUser
 done
+
+# Verify Glance images
+
+echo '******************************************'
+echo
+echo 'Glance Images:'
+glance index
+echo
+echo '******************************************'
+
+while [ -z $glanceImages ]; do
+  echo 'Are Glance images uploaded? (y/n)'
+  read glanceImages
+done
+
+# Verify snapshot
+
+echo 'Booting an instance and testing snapshot. This may take a moment.'
+nova boot --image $(nova image-list | awk '/Ubuntu/ {print $2}' | tail -1) \
+      --flavor 2 \
+      --security-group rpc-support \
+      --key-name controller-id_rsa \
+      --nic net-id=$(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}' | tail -n1) \
+      rs_snapshot_test >/dev/null;
+
+sleep 30
+nova image-create $(nova list | awk '/rs_snapshot_test/ {print $2}') rs_snapshot_test
+
+count=0
+while [ $(nova image-list | awk '/rs_snapshot_test/ {print $6}') = "SAVING" ]; do
+  sleep 5
+  echo 'Waiting for snapshot to save.'
+  count=$[count = $count + 1]
+  if [ $(echo $count) -gt 15 ]; then
+    echo 'Snapshot taking too long to save. Please investigate.'
+    exit 0
+    checkStatus
+  fi
+done
+
+if [ $(nova image-list | awk '/rs_snapshot_test/ {print $6}') = "ERROR" ]; then
+  echo "There was a problem creating the snapshot. Please investigate."
+  exit 0
+  checkStatus
+else
+  echo "Snapshot successful."
+  nova image-delete $(nova image-list | awk '/rs_snapshot_test/ {print $2}')
+  nova delete $(nova list | awk '/rs_snapshot_test/ {print $2}')
+  snapshot=y
+fi
+
 
 #print QC status output
 checkStatus
