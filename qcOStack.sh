@@ -25,10 +25,22 @@ checkStatus() {
   outputStatus $instanceSuccess ' Instance Availability'
   outputStatus $snapshot ' Snapshot Creation'
   outputStatus $floatingIP ' Floating IPs'
-  outputStatus $nimCheck ' Nimbus Installed'
   outputStatus $cinderVolume ' Cinder Volumes'
+  outputStatus $nimCheck ' Nimbus Installed'
   echo -e '******************************************'
 }
+
+buildInstance() {
+
+nova boot --image $(nova image-list | awk '/Ubuntu/ {print $2}' | tail -1) \
+      --flavor 2 \
+      --security-group rpc-support \
+      --key-name controller-id_rsa \
+      --nic net-id=$network \
+      $buildOption \
+      $testInstanceName >/dev/null;
+}
+
 
 control_c()
 # run if user hits control-c
@@ -63,13 +75,11 @@ fi
 echo 'Building instances, this may take several minutes.'
 for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
   do for COMPUTE in $(nova hypervisor-list | awk '/[0-9]/ {print $4}');
-    do nova boot --image $(nova image-list | awk '/Ubuntu/ {print $2}' | tail -1) \
-      --flavor 2 \
-      --security-group rpc-support \
-      --key-name controller-id_rsa \
-      --nic net-id=$NET \
-      --availability-zone nova:$COMPUTE \
-      test-$COMPUTE-$NIC >/dev/null;
+    do computeNode=$COMPUTE
+       buildOption="--availability-zone nova:$COMPUTE"
+       network=$NET
+       testInstanceName="rstest-$network-$COMPUTE"
+       buildInstance
     done
 
   sleep 30
@@ -161,15 +171,12 @@ done
 # Verify snapshot
 
 echo 'Booting an instance and testing snapshot. This may take a moment.'
-nova boot --image $(nova image-list | awk '/Ubuntu/ {print $2}' | tail -1) \
-      --flavor 2 \
-      --security-group rpc-support \
-      --key-name controller-id_rsa \
-      --nic net-id=$(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}' | tail -n1) \
-      rs_snapshot_test >/dev/null;
+network=$(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}' | tail -n1)
+testInstanceName="rs-snap-test"
+buildInstance
 
 sleep 30
-nova image-create $(nova list | awk '/rs_snapshot_test/ {print $2}') rs_snapshot_test
+nova image-create $(nova list | awk '/rs-snap-test/ {print $2}') rs_snapshot_test
 
 count=0
 while [ $(nova image-list | awk '/rs_snapshot_test/ {print $6}') = "SAVING" ]; do
@@ -190,8 +197,28 @@ if [ $(nova image-list | awk '/rs_snapshot_test/ {print $6}') = "ERROR" ]; then
 else
   echo "Snapshot successful."
   nova image-delete $(nova image-list | awk '/rs_snapshot_test/ {print $2}')
-  nova delete $(nova list | awk '/rs_snapshot_test/ {print $2}')
+  nova delete $(nova list | awk '/rs-snap-test/ {print $2}')
   snapshot=y
+fi
+
+# TODO floating IP check
+
+# TODO Cinder volumes
+
+# Verify NimBUS installed and openstack probes installed
+
+if ps auwx | grep 'nimbus(cdm)' | grep -v grep >/dev/null; then
+  echo 'NimBUS installed. Verifying Openstack probe installed.'
+  if [ -d /opt/nimbus/probes/openstack/ ]; then
+    echo 'Openstack probe installed.'
+    nimCheck=y
+  else
+    echo 'Openstack probe does not seem to be present. Please investigate.'
+    nimCheck=n
+  fi
+else
+  echo 'NimBUS does not seem to be installed properly (CDM probe not installed). Please investigate.'
+  nimCheck=n
 fi
 
 
