@@ -170,7 +170,7 @@ done
 
 # Verify snapshot
 
-echo 'Booting an instance and testing snapshot. This may take a moment.'
+echo 'Booting an instance and testing snapshot. This may take several minutes.'
 network=$(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}' | tail -n1)
 testInstanceName="rs-snap-test"
 buildInstance
@@ -201,9 +201,56 @@ else
   snapshot=y
 fi
 
-# TODO floating IP check
+# TODO floating IP check - add more error tests
 
-# TODO Cinder volumes
+# Check/test floating IPs
+
+if nova floating-ip-pool-list | egrep -v '\+|name' >/dev/null; then
+  echo 'Floating IP Pool Created. Testing floating IP, this may take several minutes.'
+  floatPool=$(nova floating-ip-pool-list | egrep -v '\+|name' | sed 's/|//g')
+  nova floating-ip-create $floatPool >/dev/null  
+  network=$(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}' | tail -n1)
+  testInstanceName="rs-float-test"
+  buildInstance
+  sleep 30
+  floatIP=$(nova floating-ip-list | egrep -v '\+|Ip' | awk '{print $2}')
+  floatInstance=$(nova list | awk '/rs-float-test/ {print $2}')
+  nova add-floating-ip $floatInstance $floatIP
+  sleep 20
+  if ! nova list | grep $floatIP >/dev/null; then
+    echo 'There was a problem assigning the floating IP. Please investigate.'
+    floatingIP=n
+    checkStatus
+    exit 0
+  else
+    echo 'Floating IP assigned. Please try pinging the PUBLIC IP that NATs to '$floatIP
+    while [ -z $floatingIP ]; do
+      echo 'Does floating IP ping? (y/n)'
+      read floatingIP
+    done
+    nova delete $(nova list | awk '/rs-float-test/ {print $2}')
+    nova floating-ip-delete $floatIP
+  fi 
+fi
+
+# TODO Cinder volumes - Add more error tests
+
+# Test Cinder
+
+if cinder service-list | grep "cinder-volume" >/dev/null; then
+  echo 'Cinder configured. Verifing volume creation and attachment. This may take several minutes.'
+  network=$(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}' | tail -n1)
+  testInstanceName="rs-cinder-test"
+  buildInstance
+  sleep 30
+  cinder create --display-name "rs-cinder-test" 10
+  sleep 10
+  cinderVolume=$(cinder list | awk '/rs-cinder-test/ {print $2}')
+  cinderInstance=$(nova list | awk '/rs-cinder-test/ {print $2}')
+  nova volume-attach $cinderInstance $cinderVolume auto
+  sleep 10
+  cinderInstanceIP=$(nova list | sed 's/.*=//' | egrep -v "\+|ID" | sed 's/ *|//g')
+    
 
 # Verify NimBUS installed and openstack probes installed
 
