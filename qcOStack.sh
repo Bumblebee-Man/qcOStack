@@ -85,7 +85,7 @@ for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
 
   sleep 30
 
-
+# TODO fix bug when there's multiple networks. Only prompts for conformation on the first pass.
   for IP in $(nova list | sed 's/.*=//' | egrep -v "\+|ID" | sed 's/ *|//g');
     do echo "$IP"': Attempting to ping 8.8.8.8 three times';
     ip netns exec qdhcp-$NET ssh -n -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ubuntu@$IP "ping -c 3 8.8.8.8 | grep loss 2>/dev/null" ;
@@ -95,7 +95,7 @@ for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
     read instanceSuccess
   done
   if [ $instanceSuccess = "y" ]; then
-    echo 'Deleting instances from network '"$NET/n"
+    echo 'Deleting instances from network '"$NET"
     for ID in $(nova list | awk '/[0-9]/ {print $2}');
       do nova delete $ID;
     done
