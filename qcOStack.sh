@@ -71,7 +71,8 @@ fi
 
 # build instances on each network and each compute node
 # then attempt to ping from each instance to 8.8.8.8
-
+# TODO: Automate this
+ 
 echo 'Building instances, this may take several minutes.'
 for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
   do for COMPUTE in $(nova hypervisor-list | awk '/[0-9]/ {print $4}');
@@ -233,7 +234,7 @@ if nova floating-ip-pool-list | egrep -v '\+|name' >/dev/null; then
   fi 
 fi
 
-# TODO Cinder volumes - Add more error tests
+# TODO Cinder volumes - Add more error tests and clean up
 
 # Test Cinder
 
@@ -243,14 +244,28 @@ if cinder service-list | grep "cinder-volume" >/dev/null; then
   testInstanceName="rs-cinder-test"
   buildInstance
   sleep 30
-  cinder create --display-name "rs-cinder-test" 10
+  cinder create --display-name "rs-cinder-test" 10 >/dev/null
   sleep 10
-  cinderVolume=$(cinder list | awk '/rs-cinder-test/ {print $2}')
+  cinderVolumeUUID=$(cinder list | awk '/rs-cinder-test/ {print $2}')
   cinderInstance=$(nova list | awk '/rs-cinder-test/ {print $2}')
-  nova volume-attach $cinderInstance $cinderVolume auto
-  sleep 10
   cinderInstanceIP=$(nova list | sed 's/.*=//' | egrep -v "\+|ID" | sed 's/ *|//g')
-    
+  nova volume-attach $cinderInstance $cinderVolumeUUID /dev/vdb >/dev/null
+  sleep 10
+  cinderDetails=$(ip netns exec qdhcp-$network ssh -n -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ubuntu@$cinderInstanceIP "sudo fdisk -l")
+  sleep 10
+  if echo $cinderDetails | grep '/dev/vdb' >/dev/null; then
+    echo 'Cinder volume attached successfully.'
+    nova delete $testInstanceName
+    sleep 5
+    cinder delete $cinderVolumeUUID
+    cinderVolume=y
+  else
+    echo 'Cinder volume did not attach successfully! Please investigate.'
+    cinderVolume=n
+    checkStatus
+    exit 0
+  fi
+fi  
 
 # Verify NimBUS installed and openstack probes installed
 
