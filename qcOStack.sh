@@ -71,7 +71,6 @@ fi
 
 # build instances on each network and each compute node
 # then attempt to ping from each instance to 8.8.8.8
-# TODO: Automate this
  
 echo 'Building instances, this may take several minutes.'
 for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
@@ -85,15 +84,19 @@ for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
 
   sleep 30
 
-# TODO fix bug when there's multiple networks. Only prompts for conformation on the first pass.
   for IP in $(nova list | sed 's/.*=//' | egrep -v "\+|ID" | sed 's/ *|//g');
     do echo "$IP"': Attempting to ping 8.8.8.8 three times';
-    ip netns exec qdhcp-$NET ssh -n -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ubuntu@$IP "ping -c 3 8.8.8.8 | grep loss 2>/dev/null" ;
+    pingTest=$(ip netns exec qdhcp-$NET ssh -n -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ubuntu@$IP "ping -c 3 8.8.8.8 | grep loss 2>/dev/null")
+    if echo $pingTest | grep '100% packet loss'; then
+      echo 'Instances not able to ping out! Please investigate.'
+      instanceSuccess=n
+      checkStatus
+      exit 0
+    else
+      instanceSuccess=y
+    fi
   done
-  while [ -z $instanceSuccess ]; do
-    /bin/echo -e 'Was instance ping test successful? (y/n)'
-    read instanceSuccess
-  done
+
   if [ $instanceSuccess = "y" ]; then
     echo 'Deleting instances from network '"$NET"
     for ID in $(nova list | awk '/[0-9]/ {print $2}');
