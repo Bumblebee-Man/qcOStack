@@ -84,6 +84,7 @@ control_c()
 trap control_c SIGINT
 
 # Output and verify rabbitMQ cluster status
+# TODO (ramsey) automate this?
 
 /usr/sbin/rabbitmqctl cluster_status
 
@@ -164,6 +165,8 @@ fi
 
 # Verify keystone user and tenant
 
+# TODO (ramsey) Automate this?
+
 echo '******************************************'
 echo
 echo 'Keystone users:'
@@ -179,6 +182,8 @@ echo '******************************************'
 read -p 'Is user/tenant created? (y/n)' tenantUser
 
 # Verify Glance images
+
+# TODO (ramsey) Automate this?
 
 echo '******************************************'
 echo
