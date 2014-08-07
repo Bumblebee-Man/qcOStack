@@ -5,6 +5,9 @@
 # Script to QC RPC environment
 set --
 
+# source creds file
+source /root/.novarc
+
 #check QC status
 outputStatus() {
   if [[ ${1} = "y" ]]; then
@@ -90,8 +93,6 @@ for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
     if echo $pingTest | grep '100% packet loss'; then
       echo 'Instances not able to ping out! Please investigate.'
       instanceSuccess=n
-      checkStatus
-      exit 0
     else
       instanceSuccess=y
     fi
@@ -104,8 +105,6 @@ for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
     done
   else
     echo 'Please correct issues and run QC script again.'
-    checkStatus
-    exit 0
   fi
 done
 
@@ -247,7 +246,7 @@ if cinder service-list | grep "cinder-volume" >/dev/null; then
   testInstanceName="rs-cinder-test"
   buildInstance
   sleep 30
-  cinder create --display-name "rs-cinder-test" 10 >/dev/null
+  cinder create --display-name "rs-cinder-test" 1 >/dev/null
   sleep 10
   cinderVolumeUUID=$(cinder list | awk '/rs-cinder-test/ {print $2}')
   cinderInstance=$(nova list | awk '/rs-cinder-test/ {print $2}')
