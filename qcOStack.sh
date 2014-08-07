@@ -62,7 +62,7 @@ checkStatus() {
 
 buildInstance() {
 
-nova boot --image $(nova image-list | awk '/Ubuntu/ {print $2}' | tail -1) \
+nova boot --image $(nova image-list | awk '/Precise/ {print $2}' | tail -1) \
       --flavor 2 \
       --security-group rpc-support \
       --key-name controller-id_rsa \
@@ -102,11 +102,11 @@ fi
  
 echo 'Building instances, this may take several minutes.'
 for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
-  do for COMPUTE in $(nova hypervisor-list | awk '/[0-9]/ {print $4}');
+  do for COMPUTE in $(nova service-list | grep -i compute | awk '{print $4}');
     do computeNode=${COMPUTE}
        buildOption="--availability-zone nova:${COMPUTE}"
        network=${NET}
-       testInstanceName="rstest-${network}-${COMPUTE}"
+       testInstanceName="rstest-${COMPUTE}"
        buildInstance
     done
 
@@ -115,11 +115,11 @@ for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
   for IP in $(nova list | sed 's/.*=//' | egrep -v "\+|ID" | sed 's/ *|//g');
     do echo "${IP}"': Attempting to ping 8.8.8.8 three times';
     pingTest=$(ip netns exec qdhcp-${NET} ssh -n -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ubuntu@${IP} "ping -c 3 8.8.8.8 | grep loss 2>/dev/null")
-    if echo ${pingTest} | grep '100% packet loss'; then
-      echo 'Instances not able to ping out! Please investigate.'
-      instanceSuccess=n
-    else
+    if echo ${pingTest} | grep ' 0% packet loss' >/dev/null; then
       instanceSuccess=y
+    else
+      echo 'Instances are not pinging out! Please investigate.'
+      instanceSuccess=n
     fi
   done
 
