@@ -246,14 +246,13 @@ if nova floating-ip-pool-list | egrep -v '\+|name' >/dev/null; then
   if ! nova list | grep ${floatIP} >/dev/null; then
     echo 'There was a problem assigning the floating IP. Please investigate.'
     floatingIP=n
+    nova delete $(nova list | awk '/rs-float-test/ {print $2}')
+    nova floating-ip-delete ${floatIP}
     checkStatus
     exit 0
   else
     echo 'Floating IP assigned. Please try pinging the PUBLIC IP that NATs to '${floatIP}
-    while [ -z ${floatingIP} ]; do
-      echo 'Does floating IP ping? (y/n)'
-      read floatingIP
-    done
+    read -p 'Does floating IP ping? (y/n)' floatingIP
     nova delete $(nova list | awk '/rs-float-test/ {print $2}')
     nova floating-ip-delete ${floatIP}
   fi 
