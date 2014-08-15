@@ -65,10 +65,12 @@ glance image-create --name "RACK_IMG_TEST" \
   --container-format bare --is-public True \
   --location http://uec-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img
 
+echo "Sleeping for 90 seconds while image is downloaded"
+
 sleep 90 
 
 
-nova boot --image $(nova image-list | awk '/Precise/ {print $2}' | tail -1) \
+nova boot --image $(glance image-list | grep RACK_IMG_TEST | awk '{ print $2 }' | tail -1) \
       --flavor 2 \
       --security-group rpc-support \
       --key-name controller-id_rsa \
