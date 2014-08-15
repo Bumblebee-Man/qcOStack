@@ -57,9 +57,11 @@ checkStatus() {
   echo -e '******************************************'
 }
 
-buildInstance() {
+downloadtestimage() {
 
 ## Download an known working image
+echo "Uploading a test image (precise-server-cloudimg)"
+
 glance image-create --name "RACK_IMG_TEST" \
   --disk-format qcow2 \
   --container-format bare --is-public True \
@@ -69,8 +71,11 @@ echo "Sleeping for 30 seconds while image is downloaded"
 
 sleep 30
 
+}
 
-nova boot --image $(glance image-list | grep RACK_IMG_TEST | awk '{ print $2 }' | tail -1) \
+buildInstance() {
+
+nova boot --image $(glance index | grep RACK_IMG_TEST | awk '{ print $1 }') \
       --flavor 2 \
       --security-group rpc-support \
       --key-name controller-id_rsa \
