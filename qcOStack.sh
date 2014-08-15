@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-#
-#
-#
 
 
 # source creds file
@@ -61,6 +58,15 @@ checkStatus() {
 }
 
 buildInstance() {
+
+## Download an known working image
+glance image-create --name "RACK_IMG_TEST" \
+  --disk-format qcow2 \
+  --container-format bare --is-public True \
+  --location http://uec-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img
+
+sleep 90 
+
 
 nova boot --image $(nova image-list | awk '/Precise/ {print $2}' | tail -1) \
       --flavor 2 \
