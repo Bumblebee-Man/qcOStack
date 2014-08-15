@@ -65,7 +65,7 @@ glance image-create --name "RACK_IMG_TEST" \
   --container-format bare --is-public True \
   --location http://uec-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img
 
-echo "Sleeping for 90 seconds while image is downloaded"
+echo "Sleeping for 30 seconds while image is downloaded"
 
 sleep 30
 
