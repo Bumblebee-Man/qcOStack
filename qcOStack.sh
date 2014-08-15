@@ -109,6 +109,10 @@ if [[ ${rabbitStatus} != "y" ]]; then
   exit 0
 fi
 
+#Download a test image
+do downloadtestimage
+done
+sleep 20
 
 # build instances on each network and each compute node
 # then attempt to ping from each instance to 8.8.8.8
