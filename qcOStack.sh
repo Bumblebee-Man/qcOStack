@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 
 
-# source creds file
-source /root/.novarc
+# source creds file -- UNCOMMENT IN PROD
+# source /root/.novarc
+
+## SOURCE FOR CHAVEZ TEST LAB
+source /home/openstack/credentials/admin
 
 # unset all varilables
 
@@ -73,18 +76,6 @@ sleep 30
 
 }
 
-buildInstance() {
-
-nova boot --image $(glance index | grep RACK_IMG_TEST | awk '{ print $1 }') \
-      --flavor 2 \
-      --security-group rpc-support \
-      --key-name controller-id_rsa \
-      --nic net-id=${network} \
-      ${buildOption} \
-      ${testInstanceName} >/dev/null;
-}
-
-
 control_c()
 # run if user hits control-c
 {
@@ -107,118 +98,7 @@ if [[ ${rabbitStatus} != "y" ]]; then
   echo 'Please correct RabbitMQ cluster then run the QC script again.'
   checkStatus
   exit 0
-fi
 
-#Download a test image
-do downloadtestimage
-done
-sleep 20
-
-# build instances on each network and each compute node
-# then attempt to ping from each instance to 8.8.8.8
- 
-echo 'Building instances, this may take several minutes.'
-for NET in $(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}');
-  do for COMPUTE in $(nova service-list | grep -i compute | awk '{print $4}');
-    do computeNode=${COMPUTE}
-       buildOption="--availability-zone nova:${COMPUTE}"
-       network=${NET}
-       testInstanceName="rstest-${COMPUTE}"
-       buildInstance
-    done
-
-  sleep 30
-
-  for IP in $(nova list | sed 's/.*=//' | egrep -v "\+|ID" | sed 's/ *|//g');
-    do echo "${IP}"': Attempting to ping 8.8.8.8 three times';
-    pingTest=$(ip netns exec qdhcp-${NET} ssh -n -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ubuntu@${IP} "ping -c 3 8.8.8.8 | grep loss 2>/dev/null")
-    if echo ${pingTest} | grep ' 0% packet loss' >/dev/null; then
-      instanceSuccess=y
-    else
-      echo 'Instances are not pinging out! Please investigate.'
-      instanceSuccess=n
-    fi
-  done
-
-  if [ ${instanceSuccess} = "y" ]; then
-    echo 'Deleting instances from network '"${NET}"
-    for ID in $(nova list | awk '/[0-9]/ {print $2}');
-      do nova delete ${ID};
-    done
-  else
-    echo 'Please correct issues and run QC script again.'
-  fi
-done
-
-#if replication is configured, test to make sure it's working
-
-if mysql mysql -e 'SELECT User FROM user\G' | grep -q repl; then
-  echo 'MySQL replication configured.'
-  slave=$(mysql -e "SHOW SLAVE STATUS\G" | awk '/Master_Host/ {print $2}')
-  slaveSecsBehind=$(ssh ${slave} "mysql -e 'SHOW SLAVE STATUS\G' | grep 'Seconds_Behind_Master'")
-  if ! mysql -e 'SHOW SLAVE STATUS\G' | grep -q "Slave_IO_Running: Yes"; then
-    echo 'MySQL replication possibly broken (Slave IO not running)! Please investigate.'
-    exit 0
-  elif ! mysql -e 'SHOW SLAVE STATUS\G' | grep -q "Slave_SQL_Running: Yes"; then
-    echo 'MySQL replication possibly broken (Slave SQL not running)! Please investigate.'
-    exit 0
-  elif [[ $(mysql -e 'SHOW SLAVE STATUS\G' | awk '/Seconds_Behind_Master/ {print $2}') -gt 0 ]]; then
-    echo 'MySQL replication possibly broken! The slave is behind master!'
-    exit 0
-  elif ! ssh ${slave} 'mysql -e "SHOW SLAVE STATUS\G" | grep -q "Slave_SQL_Running: Yes"'; then
-    echo 'MySQL replication possibly broken (Slave SQL not running) on slave! Please investigate.'
-    exit 0
-  elif ! ssh ${slave} 'mysql -e "SHOW SLAVE STATUS\G" | grep -q "Slave_SQL_Running: Yes"'; then
-    echo 'MySQL replication possibly broken (Slave SQL not running) on slave! Please investigate.'
-    exit 0
-  elif [[ $(echo ${slaveSecsBehind} | awk '{print $2}') -gt 0 ]]; then
-    echo 'MySQL replication possibly broken! The slave is behind master on the slave!'
-    exit 0
-  else
-    echo 'MySQL replication looks good!'
-    myRepl=y
-  fi
-fi
-
-# Verify keystone user and tenant
-
-# TODO (ramsey) Automate this?
-
-echo '******************************************'
-echo
-echo 'Keystone users:'
-keystone user-list | egrep -v 'ceilometer|cinder|glance|monitoring|neutron|nova' | awk '/True/ {print $2, $4}'
-echo
-echo '******************************************'
-echo
-echo 'Keystone tenants:'
-keystone tenant-list | egrep -v 'service' | awk '/True/ {print $2, $4}'
-echo
-echo '******************************************'
-
-read -p 'Is user/tenant created? (y/n)' tenantUser
-
-# Verify Glance images
-
-# TODO (ramsey) Automate this?
-
-echo '******************************************'
-echo
-echo 'Glance Images:'
-glance index
-echo
-echo '******************************************'
-
-read -p 'Are Glance images uploaded? (y/n)' glanceImages
-
-# Verify snapshot
-
-echo 'Booting an instance and testing snapshot. This may take several minutes.'
-network=$(nova net-list | awk '/[0-9]/ && !/GATEWAY/ {print $2}' | tail -n1)
-testInstanceName="rs-snap-test"
-buildInstance
-
-sleep 30
 nova image-create $(nova list | awk '/rs-snap-test/ {print $2}') rs_snapshot_test
 
 count=0
