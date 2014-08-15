@@ -67,7 +67,7 @@ glance image-create --name "RACK_IMG_TEST" \
 
 echo "Sleeping for 90 seconds while image is downloaded"
 
-sleep 90 
+sleep 30
 
 
 nova boot --image $(glance image-list | grep RACK_IMG_TEST | awk '{ print $2 }' | tail -1) \
